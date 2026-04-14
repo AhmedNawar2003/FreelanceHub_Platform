@@ -62,6 +62,10 @@ FreelanceHub is a **fully distributed, event-driven microservices platform** tha
 
 ## 🏛️ System Architecture
 
+<p align="center">
+  <img src="/Freelancing Microservices Platform.jpeg" width="100%" alt="SmartEvent System Architecture"/>
+</p>
+
 ```text
                     ┌──────────────────────┐
                     │      Client Apps      │
