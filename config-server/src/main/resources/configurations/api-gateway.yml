@@ -1,5 +1,6 @@
 server:
   port: 8080
+  forward-headers-strategy: framework
 
 spring:
   application:
@@ -24,10 +25,20 @@ spring:
           enabled: true
           lower-case-service-id: true
       routes:
+        # ===== User Service =====
         - id: user-service-public
           uri: lb://user-service
           predicates:
             - Path=/api/users/auth/**
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter: "#{@publicRateLimiter}"
+                key-resolver: "#{@ipKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: userServicePublic
+                fallbackUri: forward:/fallback/user-service
 
         - id: user-service-private
           uri: lb://user-service
@@ -35,41 +46,162 @@ spring:
             - Path=/api/users/**
           filters:
             - AuthenticationFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter: "#{@privateRateLimiter}"
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: userServicePrivate
+                fallbackUri: forward:/fallback/user-service
 
+        # ===== Project Service =====
         - id: project-service
           uri: lb://project-service
           predicates:
             - Path=/api/projects/**
           filters:
             - AuthenticationFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter: "#{@privateRateLimiter}"
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: projectService
+                fallbackUri: forward:/fallback/project-service
 
+        # ===== Contract Service =====
         - id: contract-service
           uri: lb://contract-service
           predicates:
             - Path=/api/contracts/**
           filters:
             - AuthenticationFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter: "#{@privateRateLimiter}"
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: contractService
+                fallbackUri: forward:/fallback/contract-service
 
+        # ===== Payment Service =====
         - id: payment-service
           uri: lb://payment-service
           predicates:
             - Path=/api/payments/**
           filters:
             - AuthenticationFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter: "#{@privateRateLimiter}"
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: paymentService
+                fallbackUri: forward:/fallback/payment-service
 
+        # ===== Review Service =====
         - id: review-service
           uri: lb://review-service
           predicates:
             - Path=/api/reviews/**
           filters:
             - AuthenticationFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter: "#{@privateRateLimiter}"
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: reviewService
+                fallbackUri: forward:/fallback/review-service
 
+        # ===== Notification Service =====
         - id: notification-service
           uri: lb://notification-service
           predicates:
             - Path=/api/notifications/**
           filters:
             - AuthenticationFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter: "#{@privateRateLimiter}"
+                key-resolver: "#{@userKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: notificationService
+                fallbackUri: forward:/fallback/notification-service
+
+        # ===== Swagger Docs =====
+        - id: user-service-docs
+          uri: lb://user-service
+          predicates:
+            - Path=/user-service/v3/api-docs
+          filters:
+            - RewritePath=/user-service/v3/api-docs, /v3/api-docs
+
+        - id: project-service-docs
+          uri: lb://project-service
+          predicates:
+            - Path=/project-service/v3/api-docs
+          filters:
+            - RewritePath=/project-service/v3/api-docs, /v3/api-docs
+
+        - id: contract-service-docs
+          uri: lb://contract-service
+          predicates:
+            - Path=/contract-service/v3/api-docs
+          filters:
+            - RewritePath=/contract-service/v3/api-docs, /v3/api-docs
+
+        - id: payment-service-docs
+          uri: lb://payment-service
+          predicates:
+            - Path=/payment-service/v3/api-docs
+          filters:
+            - RewritePath=/payment-service/v3/api-docs, /v3/api-docs
+
+        - id: review-service-docs
+          uri: lb://review-service
+          predicates:
+            - Path=/review-service/v3/api-docs
+          filters:
+            - RewritePath=/review-service/v3/api-docs, /v3/api-docs
+
+        - id: notification-service-docs
+          uri: lb://notification-service
+          predicates:
+            - Path=/notification-service/v3/api-docs
+          filters:
+            - RewritePath=/notification-service/v3/api-docs, /v3/api-docs
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    config-url: /v3/api-docs/swagger-config
+    urls:
+      - name: User Service
+        url: /user-service/v3/api-docs
+      - name: Project Service
+        url: /project-service/v3/api-docs
+      - name: Contract Service
+        url: /contract-service/v3/api-docs
+      - name: Payment Service
+        url: /payment-service/v3/api-docs
+      - name: Review Service
+        url: /review-service/v3/api-docs
+      - name: Notification Service
+        url: /notification-service/v3/api-docs
+  api-docs:
+    enabled: true
 
 eureka:
   instance:
@@ -89,3 +221,33 @@ management:
     web:
       exposure:
         include: "*"
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+  data:
+    redis:
+      host: redis
+      port: 6379
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+
+management:
+  zipkin:
+    tracing:
+      endpoint: http://zipkin:9411/api/v2/spans

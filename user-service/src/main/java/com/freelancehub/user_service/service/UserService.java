@@ -5,13 +5,21 @@ import com.freelancehub.user_service.dto.UserProfileResponse;
 import com.freelancehub.user_service.entity.User;
 import com.freelancehub.user_service.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
-
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
     private final UserRepository userRepository;
+
+    @Cacheable(value = "users", key = "#id")
+    public UserProfileResponse getUserById(Long id) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        return mapToResponse(user);
+    }
 
     public UserProfileResponse getProfile(String email) {
         User user = userRepository.findByEmail(email)
@@ -19,12 +27,7 @@ public class UserService {
         return mapToResponse(user);
     }
 
-    public UserProfileResponse getUserById(Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        return mapToResponse(user);
-    }
-
+    @CacheEvict(value = "users", key = "#result.id")
     public UserProfileResponse updateProfile(String email, UpdateProfileRequest request) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));

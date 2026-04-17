@@ -8,6 +8,7 @@ import com.freelancehub.contract_service.enums.ContractStatus;
 import com.freelancehub.contract_service.enums.MilestoneStatus;
 import com.freelancehub.contract_service.repository.ContractRepository;
 import com.freelancehub.contract_service.repository.MilestoneRepository;
+import com.freelancehub.contract_service.saga.ContractSagaOrchestrator;
 import com.freelancehub.contract_service.security.JwtService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,6 +23,7 @@ public class ContractService {
     private final ContractRepository contractRepository;
     private final MilestoneRepository milestoneRepository;
     private final JwtService jwtService;
+    private final ContractSagaOrchestrator sagaOrchestrator;
 
     @Transactional
     public ContractResponse createContract(CreateContractRequest request, String token) {
@@ -32,7 +34,7 @@ public class ContractService {
 
         Contract contract = Contract.builder()
                 .projectId(request.getProjectId())
-                .clientId(extractUserId(token))
+                .clientId(jwtService.extractUserId(token))
                 .clientEmail(clientEmail)
                 .freelancerId(request.getFreelancerId())
                 .freelancerEmail(request.getFreelancerEmail())
@@ -43,19 +45,20 @@ public class ContractService {
 
         if (request.getMilestones() != null) {
             request.getMilestones().forEach(m -> {
-                Milestone milestone = Milestone.builder()
+                milestoneRepository.save(Milestone.builder()
                         .contract(saved)
                         .title(m.getTitle())
                         .description(m.getDescription())
                         .amount(m.getAmount())
-                        .build();
-                milestoneRepository.save(milestone);
+                        .build());
             });
         }
 
+        // Start Saga
+        sagaOrchestrator.startSaga(saved);
+
         return mapToResponse(saved);
     }
-
     public ContractResponse getContractById(Long id) {
         return mapToResponse(findContract(id));
     }

@@ -6,6 +6,8 @@ import com.freelancehub.review_service.entity.Review;
 import com.freelancehub.review_service.repository.ReviewRepository;
 import com.freelancehub.review_service.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -19,6 +21,7 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final JwtService jwtService;
 
+    @CacheEvict(value = {"reviews", "review-stats"}, allEntries = true)
     public ReviewResponse createReview(CreateReviewRequest request, String token) {
         String reviewerEmail = jwtService.extractEmail(token);
         Long reviewerId = jwtService.extractUserId(token);
@@ -44,38 +47,40 @@ public class ReviewService {
         return mapToResponse(reviewRepository.save(review));
     }
 
+    @Cacheable(value = "reviews", key = "'user:' + #revieweeId")
     public List<ReviewResponse> getReviewsByReviewee(Long revieweeId) {
         return reviewRepository.findByRevieweeId(revieweeId)
                 .stream().map(this::mapToResponse).toList();
     }
 
+    @Cacheable(value = "reviews", key = "'contract:' + #contractId")
     public List<ReviewResponse> getReviewsByContract(Long contractId) {
         return reviewRepository.findByContractId(contractId)
                 .stream().map(this::mapToResponse).toList();
     }
 
     public List<ReviewResponse> getMyReviews(String token) {
-        Long reviewerId = jwtService.extractUserId(token);
-        return reviewRepository.findByReviewerId(reviewerId)
+        return reviewRepository.findByReviewerId(jwtService.extractUserId(token))
                 .stream().map(this::mapToResponse).toList();
     }
 
+    @Cacheable(value = "review-stats", key = "#userId")
     public Map<String, Object> getUserStats(Long userId) {
         List<Review> reviews = reviewRepository.findByRevieweeId(userId);
         Double avgRating = reviewRepository.getAverageRatingByRevieweeId(userId);
 
-        Map<String, Object> stats = new HashMap<>();
-        stats.put("totalReviews", reviews.size());
-        stats.put("averageRating", avgRating != null ?
-                Math.round(avgRating * 10.0) / 10.0 : 0.0);
-        stats.put("ratings", Map.of(
-                "5stars", reviews.stream().filter(r -> r.getRating() == 5).count(),
-                "4stars", reviews.stream().filter(r -> r.getRating() == 4).count(),
-                "3stars", reviews.stream().filter(r -> r.getRating() == 3).count(),
-                "2stars", reviews.stream().filter(r -> r.getRating() == 2).count(),
-                "1stars", reviews.stream().filter(r -> r.getRating() == 1).count()
-        ));
-        return stats;
+        return Map.of(
+                "totalReviews", reviews.size(),
+                "averageRating", avgRating != null ?
+                        Math.round(avgRating * 10.0) / 10.0 : 0.0,
+                "ratings", Map.of(
+                        "5stars", reviews.stream().filter(r -> r.getRating() == 5).count(),
+                        "4stars", reviews.stream().filter(r -> r.getRating() == 4).count(),
+                        "3stars", reviews.stream().filter(r -> r.getRating() == 3).count(),
+                        "2stars", reviews.stream().filter(r -> r.getRating() == 2).count(),
+                        "1stars", reviews.stream().filter(r -> r.getRating() == 1).count()
+                )
+        );
     }
 
     private ReviewResponse mapToResponse(Review review) {
